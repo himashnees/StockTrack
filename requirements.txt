@@ -1,5 +1,3 @@
-langchain
-langchain-openai
-langchain-google-genai
 streamlit
-langchain-classic
+yfinance
+pandas
