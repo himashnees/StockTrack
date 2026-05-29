@@ -1,34 +1,94 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_classic.chains import LLMChain
-from langchain_core.prompts import PromptTemplate
 import streamlit as st
-import os
+import yfinance as yf
+import pandas as pd
 
-os.environ['GOOGLE_API_KEY'] = st.secrets['GOOGLE_API_KEY']
+st.set_page_config(page_title="StockTrack", layout="centered")
 
-# Create prompt template for generating tweets
+st.title("📈 StockTrack")
+st.subheader("Indian Stock Price Tracker")
+st.write("Enter an NSE or BSE stock name/ticker and get the last 5 available trading days.")
 
-tweet_template = "Give me {number} tweets on {topic}"
+STOCK_MAP = {
+    "reliance": "RELIANCE",
+    "tcs": "TCS",
+    "infosys": "INFY",
+    "infy": "INFY",
+    "hdfc bank": "HDFCBANK",
+    "icici bank": "ICICIBANK",
+    "sbi": "SBIN",
+    "state bank of india": "SBIN",
+    "axis bank": "AXISBANK",
+    "wipro": "WIPRO",
+    "hcl": "HCLTECH",
+    "hcl tech": "HCLTECH",
+    "itc": "ITC",
+    "tata motors": "TATAMOTORS",
+    "maruti": "MARUTI",
+    "bajaj finance": "BAJFINANCE",
+    "asian paints": "ASIANPAINT",
+    "sun pharma": "SUNPHARMA",
+    "larsen": "LT",
+    "l&t": "LT",
+    "kotak bank": "KOTAKBANK",
+    "bharti airtel": "BHARTIARTL"
+}
 
-tweet_prompt = PromptTemplate(template = tweet_template, input_variables = ['number', 'topic'])
 
-# Initialize Google's Gemini model
-gemini_model = ChatGoogleGenerativeAI(model = "gemini-2.5-flash")
+def resolve_symbol(user_input, exchange):
+    user_input = user_input.strip()
+    lower_input = user_input.lower()
+
+    if user_input.upper().endswith(".NS") or user_input.upper().endswith(".BO"):
+        return user_input.upper()
+
+    base_symbol = STOCK_MAP.get(lower_input, user_input.upper().replace(" ", ""))
+
+    if exchange == "NSE":
+        return f"{base_symbol}.NS"
+    else:
+        return f"{base_symbol}.BO"
 
 
-# Create LLM chain using the prompt template and model
-tweet_chain = tweet_prompt | gemini_model
+def get_stock_data(symbol):
+    stock = yf.Ticker(symbol)
+    data = stock.history(period="15d", interval="1d")
+
+    if data.empty:
+        return None
+
+    data = data.reset_index()
+    data = data[["Date", "Open", "High", "Low", "Close", "Volume"]]
+    data["Date"] = pd.to_datetime(data["Date"]).dt.date
+
+    return data.tail(5)
 
 
-st.header("Tweet Generator - SATVIK")
+stock_input = st.text_input(
+    "Enter stock name or ticker",
+    placeholder="Example: Reliance, TCS, INFY, HDFCBANK"
+)
 
-st.subheader("Generate tweets using Generative AI")
-
-topic = st.text_input("Topic")
-
-number = st.number_input("Number of tweets", min_value = 1, max_value = 10, value = 1, step = 1)
+exchange = st.selectbox("Select Exchange", ["NSE", "BSE"])
 
 if st.button("Generate"):
-    tweets = tweet_chain.invoke({"number" : number, "topic" : topic})
-    st.write(tweets.content)
-    
+    if not stock_input.strip():
+        st.warning("Please enter a stock name or ticker.")
+    else:
+        symbol = resolve_symbol(stock_input, exchange)
+
+        with st.spinner(f"Fetching data for {symbol}..."):
+            result = get_stock_data(symbol)
+
+        if result is None:
+            st.error("Could not fetch data. Please check the stock name/ticker or try another exchange.")
+            st.info("Examples: RELIANCE.NS, TCS.NS, INFY.NS, HDFCBANK.NS")
+        else:
+            st.success(f"Showing last 5 trading days for {symbol}")
+
+            st.dataframe(result, use_container_width=True)
+
+            chart_data = result.set_index("Date")["Close"]
+            st.line_chart(chart_data)
+
+            latest_close = result.iloc[-1]["Close"]
+            st.metric("Latest Closing Price", f"₹{latest_close:.2f}")
